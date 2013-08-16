@@ -4,117 +4,111 @@ from collections import defaultdict
 import sys
 import csv
 
-if len(sys.argv) != 3:
-  print "Usage: combineLists.py list1 list2"
+if len(sys.argv) == 1:
+  print "Usage: combineLists.py list1 list2, ..."
   sys.exit(2)
 
 # A player looks like
-# { name: .., position: .., team: .., rank1: .., rank2: .., rank: .., prk1: .., prk2: .., prk: .., }
-players = {}
-positionCounts1 = defaultdict(int)
-positionCounts2 = defaultdict(int)
+# { name: .., position: .., team: .., rank: .., prk: .., }
+# We index everything from 1, so just add these things
+players = [{}]
+positionCounts = [{}]
+for i in range(1, len(sys.argv)):
+  players.append({})
+  positionCounts.append(defaultdict(int))
+
 TOTAL_COUNT = 200
 
-with open(sys.argv[1], 'r') as f1:
-  reader = csv.reader(f1)
-  count = 0
-  for row in reader:
-    if row[1] == "Team":
-      continue
-    count += 1
-    name = row[0]
-    team = row[1]
-    pos = row[2]
-    positionCounts1[pos] += 1
-    players[name] = {
-      "name": name,
-      "team": team,
-      "pos": pos,
-      "rank1": count,
-      "rank2": 0,
-      "rank": 0,
-      "prk1": positionCounts1[pos],
-      "prk2": 0,
-      "prk": 0
-    }
-    if count >= TOTAL_COUNT:
-      break
-
-with open(sys.argv[2], 'r') as f1:
-  reader = csv.reader(f1)
-  count = 0
-  for row in reader:
-    if row[1] == "Team":
-      continue
-    count += 1
-    name = row[0]
-    team = row[1]
-    pos = row[2]
-    positionCounts2[pos] += 1
-    if name in players:
-      players[name]["rank2"] = count
-      players[name]["prk2"] = positionCounts2[pos]
-    else:
-      players[name] = {
+for i in range(1, len(sys.argv)):
+  with open(sys.argv[i], 'r') as f:
+    reader = csv.reader(f)
+    count = 0
+    for row in reader:
+      if row[1] == "Team" or row[1] == "Position":
+        continue
+      count += 1
+      name = row[0]
+      team = row[1]
+      pos = row[2]
+      positionCounts[i][pos] += 1
+      players[i][name] = {
         "name": name,
         "team": team,
         "pos": pos,
-        "rank1": 0,
-        "rank2": count,
-        "rank": 0,
-        "prk1": 0,
-        "prk2": positionCounts2[pos],
-        "prk": 0
-      }
+        "rank": count,
+        "prk": positionCounts[i][pos]
+        }
       if count >= TOTAL_COUNT:
         break
 
-results = []
-for _, p in players.iteritems():
-  if p["rank1"] == 0:
-    p["rank1"] = TOTAL_COUNT + 1
-  if p["rank2"] == 0:
-    p["rank2"] = TOTAL_COUNT + 1
-  if p["prk1"] == 0:
-    p["prk1"] = positionCounts1[p["pos"]] + 1
-  if p["prk2"] == 0:
-    p["prk2"] = positionCounts2[p["pos"]] + 1
-  p["rank"] = (p["rank1"] + p["rank2"]) / 2
-  p["prk"] = (p["prk1"] + p["prk2"]) / 2
-  results.append(p)
+# convert players to { name: .., position: .., team: .., ranks: {1: .., 2: ..}, rank: .., prks: {1: .., 2:.. }, prk: .., }
+results = {}
+for i in range(1, len(sys.argv)):
+  for _, p in players[i].iteritems():
+    if p["name"] in results:
+      # Already saw this player, just add some info to them.
+      results[p["name"]]["ranks"][i] = p["rank"]
+      results[p["name"]]["prks"][i] = p["prk"]
+    else:
+      # Create this player
+      results[p["name"]] = {
+        "name": p["name"],
+        "team": p["team"],
+        "pos": p["pos"],
+        "rank": 0,
+        "prk": 0,
+        "ranks": {i: p["rank"]},
+        "prks": {i: p["prk"]}
+        }
+      
 
-results = sorted(results, key=lambda p: p["rank"])
-print "<table><tr><th>Player</th><th>Team</th><th>Position</th><th>Rank</th><th>James Rank</th><th>Alan Rank</th><th>PRK</th><th>James PRK</th><th>Alan PRK</th></tr>"
+lResults = []
+for p in results.values():
+  # Calculate rank, prk and add to list results
+  for i in range(1, len(sys.argv)):
+    # Fill in missing ranks/prks
+    if i not in p["ranks"]:
+      p["ranks"][i] = TOTAL_COUNT + 1
+    if i not in p["prks"]:
+      p["prks"][i] = positionCounts[i][p["pos"]] + 1
+
+  for _, v in p["ranks"].iteritems():
+    p["rank"] += v
+  for _, v in p["prks"].iteritems():
+    p["prk"] += v
+  p["rank"] /= len(sys.argv) - 1
+  p["prk"] /= len(sys.argv) - 1
+  lResults.append(p)
+
+lResults = sorted(lResults, key=lambda p: p["rank"])
+overallPositionCounts = defaultdict(int)
+headerText = "<table><tr><th>Player</th><th>Team</th><th>Position</th><th>Rank</th>"
+for i in range(1, len(sys.argv)):
+  headerText += "<th>%d Rank</th>" % i
+headerText += "<th>PRK</th>"
+for i in range(1, len(sys.argv)):
+  headerText += "<th>%d PRK</th>" % i
+headerText += "</tr>"
+print headerText
+
 count = 0
-positionCounts = defaultdict(int)
-for p in results:
+for p in lResults:
   count += 1
-  name = p["name"]
-  team = p["team"]
-  pos = p["pos"]
-  r = count
-  r1 = p["rank1"]
-  if r1 == TOTAL_COUNT + 1:
-    r1 = "NR"
-  else:
-    r1 = str(r1)
-  r2 = p["rank2"]
-  if r2 == TOTAL_COUNT + 1:
-    r2 = "NR"
-  else:
-    r2 = str(r2)
-  positionCounts[pos] += 1
-  prk = pos + str(positionCounts[pos])
-  prk1 = p["prk1"]
-  if prk1 == positionCounts1[p["pos"]] + 1:
-    prk1 = "NR"
-  else:
-    prk1 = str(prk1)
-  prk2 = p["prk2"]
-  if prk2 == positionCounts2[p["pos"]] + 1:
-    prk2 = "NR"
-  else:
-    prk2 = str(prk2)
 
-  print "<tr><td>%s</td><td>%s</td><td>%s</td><td><strong>%d</strong></td><td>%s</td><td>%s</td><td><strong>%s</strong></td><td>%s</td><td>%s</td></tr>" % (name, team, pos, r, r1, r2, prk, prk1, prk2)
+  text = "<tr><td>%s</td><td>%s</td><td>%s</td><td><strong>%d</strong></td>" % (p["name"], p["team"], p["pos"], count)
+  for i in range(1, len(sys.argv)):
+    if p["ranks"][i] == TOTAL_COUNT + 1:
+      text += "<td>NR</td>"
+    else:
+      text += "<td>%d</td>" % p["ranks"][i]
+  overallPositionCounts[p["pos"]] += 1
+  text += "<td><strong>%s%d</strong></td>" % (p["pos"], overallPositionCounts[p["pos"]])
+  for i in range(1, len(sys.argv)):
+    if p["prks"][i] == positionCounts[i][p["pos"]] + 1:
+      text += "<td>NR</td>"
+    else:
+      text += "<td>%d</td>" % (p["prks"][i])
+  text += "</tr>"
+  print text
+
 print "</table>"
